@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "ray.h"
 typedef char unsigned u8;
 typedef short unsigned u16;
 typedef int unsigned u32;
@@ -9,6 +10,10 @@ typedef int unsigned u32;
 typedef char s8;
 typedef short s16;
 typedef int s32;
+
+typedef s32 b32;
+typedef s32 b32x;
+
 typedef float f32;
 
 #define internal static
@@ -98,17 +103,61 @@ int main(int argc, char** argv)
 {
 	printf("hello world\n");
 
+
+	material Materials[2] = {};
+	Materials[0].Color = V3(0, 0, 0);
+	Materials[1].Color = V3(1, 0, 0);
+
+	plane Plane = {};
+	Plane.N = V3(0, 0, 1); // 这里假设Z轴向上
+	Plane.d = 0;
+	Plane.MatIndex = 1;
+
+	world World = {};
+	World.MaterialCount = 1;
+	World.Materials = Materials;
+	World.PlaneCount = 1;
+	World.Planes = &Plane;
+	World.SphereCount = 1;
+	World.Spheres = 0;
+
+	//                  y'
+	//				   /\
+	//				    |
+	//				    |
+	//                  |
+	//                 .Cam------>z'
+	//				 /
+	//              /
+	//             \/
+	//			   x'
+	//
+	//       z
+	//   y   |
+	//    \  |
+	//     \ |
+	//      .target ---->x
+	// 
+	// 
+	//
+	v3 CameraP = V3(0, 10, 1); // camera pos
+	v3 CameraZ = NOZ(CameraP - V3(0, 0, 0)); // camera ray  NOZ means normalize   z'
+	v3 CameraX = NOZ(Cross(CameraZ, V3(0, 0, 1)));  // x'
+	v3 CameraY = NOZ(Cross(CameraZ, CameraX));    // y'
+
 	u32 OutputWidth = 1280;
 	u32 OutputHeight = 720;
 	image_u32 Image = AllocateImage(1280, 720);
 
 	u32* Out = Image.Pixels;
-	for (u32 Y = 0; Y < Image.Height; ++ Y)
+	for (u32 Y = 0; Y < Image.Height; ++Y)
 		for (u32 X = 0; X < Image.Width; ++X)
 		{
-			*Out ++ = (Y < 32) ? 0xFFFF0000 : 0xFF0000FF;
+			*Out++ = (Y < 32) ? 0xFFFF0000 : 0xFF0000FF;
 		}
 
+
 	WriteImage(Image, "test.bmp");
+
 	return 0;
 }
