@@ -69,57 +69,91 @@ internal image_u32 AllocateImage(u32 Width, u32 Height)
 
 internal v3 RayCast(world* World, v3 RayOrigin, v3 RayDirection)
 {
-	v3 Result = World->Materials[0].Color; // Black
 
-	f32 HitDistance = F32MAX;
+	v3 Result = {};
+	v3 Attenuation = V3(1, 1, 1);
+
+	f32 MinHitDistance = 0.001f;
 
 	f32 Tolerance = 0.0001f;
+	for (u32 RayCount = 0; RayCount < 8; RayCount++)
+	{ 
+		f32 HitDistance = F32MAX;
+		u32 HitMatIndex = 0;
+		v3 NextOrigin = {};
+		v3 NextNormal = {};
+		for (u32 PlaneIndex = 0; PlaneIndex < World->PlaneCount; PlaneIndex++)
+		{
+			plane Plane = World->Planes[PlaneIndex];
 
-	for (u32 PlaneIndex = 0; PlaneIndex < World->PlaneCount; PlaneIndex++)
-	{
-		plane Plane = World->Planes[PlaneIndex];
+			f32 Denom = Inner(RayDirection, Plane.N); // 用于判断 射线与平面平行的标志
+			if ((Denom < -Tolerance) || (Denom > Tolerance)) { // 判断是否平行
+				f32 t = (-Plane.d - Inner(RayOrigin, Plane.N)) / Denom;
 
-		f32 Denom = Inner(RayDirection, Plane.N); // 用于判断 射线与平面平行的标志
-		if ((Denom < -Tolerance) || (Denom > Tolerance)) { // 判断是否平行
-			f32 t = (-Plane.d - Inner(RayOrigin, Plane.N)) / Denom;
+				if ((t > MinHitDistance) && (t < HitDistance)) // 反方向的distance砍掉， 因为射线不可能反方向击中物体
+				{
+					HitDistance = t;
+					HitMatIndex = Plane.MatIndex;
 
-			if ((t > 0) && (t < HitDistance)) // 反方向的distance砍掉， 因为射线不可能反方向击中物体
-			{
-				HitDistance = t;
-				Result = World->Materials[Plane.MatIndex].Color;
+					NextOrigin = t * RayDirection;
+					NextNormal = Plane.N;
+				}
 			}
 		}
-	}
 
 
-	for (u32 SphereIndex = 0; SphereIndex < World->SphereCount; SphereIndex++)
-	{
-		sphere Sphere = World->Spheres[SphereIndex];
+		for (u32 SphereIndex = 0; SphereIndex < World->SphereCount; SphereIndex++)
+		{
+			sphere Sphere = World->Spheres[SphereIndex];
 
-		v3 SphereRelativeRayOrigin = RayOrigin - Sphere.P;
-		f32 a = Inner(RayDirection, RayDirection);
-		f32 b = 2 * Inner(SphereRelativeRayOrigin, RayDirection);
-		f32 c = Inner(SphereRelativeRayOrigin, SphereRelativeRayOrigin)- Sphere.r * Sphere.r;
-		f32 RootTerm = SquareRoot(b * b - 4.0f * a * c);
-		
-		if (RootTerm > Tolerance) { // 如果 delta < 0 那么无解
+			v3 SphereRelativeRayOrigin = RayOrigin - Sphere.P;
+			f32 a = Inner(RayDirection, RayDirection);
+			f32 b = 2 * Inner(SphereRelativeRayOrigin, RayDirection);
+			f32 c = Inner(SphereRelativeRayOrigin, SphereRelativeRayOrigin)- Sphere.r * Sphere.r;
+			f32 RootTerm = SquareRoot(b * b - 4.0f * a * c);
 			f32 Denom = 2.0f * a;
-			f32 tp = (-b + RootTerm) / Denom;
-			f32 tn = (-b - RootTerm) / Denom;
-	
-			f32 Tolerance = 0.0001f;
-			
-			f32 t = tp;
-			if (tn > 0 && tn < tp) t = tn; // 如果另外一个根更小
 
-			if ((t > 0) && (t < HitDistance)) // 反方向的distance砍掉， 因为射线不可能反方向击中物体
-			{
-				HitDistance = t;
-				Result = World->Materials[Sphere.MatIndex].Color;
-			}
+			if (RootTerm > Tolerance) { // 如果 delta < 0 那么无解
+				f32 tp = (-b + RootTerm) / Denom;
+				f32 tn = (-b - RootTerm) / Denom;
+				
+				f32 t = tp;
+				if (tn > MinHitDistance && tn < tp) t = tn; // 如果另外一个根更小
+
+				if ((t > MinHitDistance) && (t < HitDistance)) // 反方向的distance砍掉， 因为射线不可能反方向击中物体
+				{
+					HitDistance = t;
+					HitMatIndex = Sphere.MatIndex;
+					NextOrigin = RayDirection * t;
+					NextNormal = NOZ(NextOrigin - Sphere.P);
+				}
 			
+			}
+		}
+
+		if (HitMatIndex)
+		{
+			material Mat = World->Materials[HitMatIndex];
+
+			// TODO(casey) : COSINE!!!
+			Result += Hadamard(Attenuation, Mat.EmitColor);
+			Attenuation = Hadamard(Attenuation, Mat.RefColor);
+
+			RayOrigin = NextOrigin;
+
+			// TODO(casey): Reflection!!!
+			RayDirection = NextNormal;
+
+		}
+		else
+		{
+			material Mat = World->Materials[HitMatIndex];
+			Result += Hadamard(Attenuation, Mat.EmitColor);
+			break;
 		}
 	}
+
+
 	return Result;
 }
 
@@ -158,13 +192,12 @@ internal void WriteImage(image_u32 Image, const char* OutputFileName)
 }
 
 int main(int argc, char** argv)
-{
-
-
+{ 
 	material Materials[3] = {};
-	Materials[0].Color = V3(0, 0, 0);
-	Materials[1].Color = V3(1, 0, 0);
-	Materials[2].Color = V3(0, 0, 1);
+	Materials[0].EmitColor = V3(0.3f, 0.4f, 0.5f);
+	Materials[1].RefColor = V3(0.5f, 0.5f, 0.5f);
+	Materials[2].RefColor = V3(0.7f, 0.5f, 0.3f);
+
 
 	plane Plane = {};
 	Plane.N = V3(0, 0, 1); // 这里假设Z轴向上
@@ -177,7 +210,7 @@ int main(int argc, char** argv)
 	Sphere.MatIndex = 2;
 
 	world World = {};
-	World.MaterialCount = 2;
+	World.MaterialCount = 3;
 	World.Materials = Materials;
 	World.PlaneCount = 1;
 	World.Planes = &Plane;

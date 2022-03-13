@@ -19,7 +19,8 @@ typedef float f32;
 
 struct material
 {
-	v3 Color;
+	v3 EmitColor;
+	v3 RefColor;
 
 };
 
