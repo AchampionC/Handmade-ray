@@ -73,23 +73,53 @@ internal v3 RayCast(world* World, v3 RayOrigin, v3 RayDirection)
 
 	f32 HitDistance = F32MAX;
 
+	f32 Tolerance = 0.0001f;
+
 	for (u32 PlaneIndex = 0; PlaneIndex < World->PlaneCount; PlaneIndex++)
 	{
 		plane Plane = World->Planes[PlaneIndex];
 
-		f32 Tolerance = 0.0001f;
 		f32 Denom = Inner(RayDirection, Plane.N); // 用于判断 射线与平面平行的标志
 		if ((Denom < -Tolerance) || (Denom > Tolerance)) { // 判断是否平行
-			f32 ThisDistance = (-Plane.d - Inner(RayOrigin, Plane.N)) / Denom;
+			f32 t = (-Plane.d - Inner(RayOrigin, Plane.N)) / Denom;
 
-			if ((ThisDistance > 0) && (ThisDistance < HitDistance)) // 反方向的distance砍掉， 因为射线不可能反方向击中物体
+			if ((t > 0) && (t < HitDistance)) // 反方向的distance砍掉， 因为射线不可能反方向击中物体
 			{
-				HitDistance = ThisDistance;
+				HitDistance = t;
 				Result = World->Materials[Plane.MatIndex].Color;
 			}
 		}
 	}
 
+
+	for (u32 SphereIndex = 0; SphereIndex < World->SphereCount; SphereIndex++)
+	{
+		sphere Sphere = World->Spheres[SphereIndex];
+
+		v3 SphereRelativeRayOrigin = RayOrigin - Sphere.P;
+		f32 a = Inner(RayDirection, RayDirection);
+		f32 b = 2 * Inner(SphereRelativeRayOrigin, RayDirection);
+		f32 c = Inner(SphereRelativeRayOrigin, SphereRelativeRayOrigin)- Sphere.r * Sphere.r;
+		f32 RootTerm = SquareRoot(b * b - 4.0f * a * c);
+		
+		if (RootTerm > Tolerance) { // 如果 delta < 0 那么无解
+			f32 Denom = 2.0f * a;
+			f32 tp = (-b + RootTerm) / Denom;
+			f32 tn = (-b - RootTerm) / Denom;
+	
+			f32 Tolerance = 0.0001f;
+			
+			f32 t = tp;
+			if (tn > 0 && tn < tp) t = tn; // 如果另外一个根更小
+
+			if ((t > 0) && (t < HitDistance)) // 反方向的distance砍掉， 因为射线不可能反方向击中物体
+			{
+				HitDistance = t;
+				Result = World->Materials[Sphere.MatIndex].Color;
+			}
+			
+		}
+	}
 	return Result;
 }
 
@@ -129,25 +159,30 @@ internal void WriteImage(image_u32 Image, const char* OutputFileName)
 
 int main(int argc, char** argv)
 {
-	printf("Raycastin' ...\n");
 
 
-	material Materials[2] = {};
+	material Materials[3] = {};
 	Materials[0].Color = V3(0, 0, 0);
 	Materials[1].Color = V3(1, 0, 0);
+	Materials[2].Color = V3(0, 0, 1);
 
 	plane Plane = {};
 	Plane.N = V3(0, 0, 1); // 这里假设Z轴向上
 	Plane.d = 0;
 	Plane.MatIndex = 1;
 
+	sphere Sphere = {};
+	Sphere.P = V3(0, 0, 0);
+	Sphere.r = 1.0f;
+	Sphere.MatIndex = 2;
+
 	world World = {};
 	World.MaterialCount = 2;
 	World.Materials = Materials;
 	World.PlaneCount = 1;
 	World.Planes = &Plane;
-	World.SphereCount = 0;
-	World.Spheres = 0;
+	World.SphereCount = 1;
+	World.Spheres = &Sphere;
 
 	//                      (0, 0, 1)
 	//			  y'       /\
@@ -180,6 +215,18 @@ int main(int argc, char** argv)
 	f32 FilmDist = 1.0f;
 	f32 FilmW = 1.0f;
 	f32 FilmH = 1.0f;
+
+	if (Image.Width > Image.Height)
+	{
+		// 如果FilmW = 1.0的话，那么
+		FilmH = (f32) Image.Height * FilmW / Image.Width;
+	}
+	else if (Image.Height > Image.Width)
+	{
+		// 如果FilmH = 1.0f的话， 那么
+		FilmW = (f32) Image.Width * FilmH / Image.Height;
+	}
+
 	f32 HalfFilmW = 0.5f * FilmW;
 	f32 HalfFilmH = 0.5f * FilmH;
 	v3 FilmCenter = CameraP - FilmDist * CameraZ;
@@ -205,12 +252,18 @@ int main(int argc, char** argv)
 
 			*Out++ =  BMPValue; // (Y < 32) ? 0xFFFF0000 : 0xFF0000FF;
 		}
+		if (Y % 64 == 0)
+		{ 
+			printf("\rRaycasting row %d%% ...\n", 100 * Y / Image.Height);
+			fflush(stdout);
+		}
+
 	}
 
 
 	WriteImage(Image, "test.bmp");
 
-	printf("Done...\n");
+	printf("\nDone...\n");
 
 	return 0;
 }

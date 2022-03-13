@@ -33,7 +33,7 @@ struct plane
 
 struct sphere
 {
-	v3 p; // center
+	v3 P; // center
 	f32 r; // radius
 	u32 MatIndex;
 };
