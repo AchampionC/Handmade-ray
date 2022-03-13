@@ -142,7 +142,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
+    <ClCompile Include="ray.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ray.h" />
