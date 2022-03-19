@@ -140,7 +140,7 @@ internal void RenderTile(world* World, image_u32 Image, u32 XMin, u32 YMin, u32 
 
 	u32 RaysPerPixel = 16;
 
-
+#pragma region TileRender
 	for (u32 Y = YMin; Y < OnePastYMax; ++Y)
 	{
 		u32* Out = GetPixelPointer(Image, XMin, Y);
@@ -161,7 +161,7 @@ internal void RenderTile(world* World, image_u32 Image, u32 XMin, u32 YMin, u32 
 				v3 RayOrigin = CameraP;
 				v3 RayDirection = NOZ(FilmP - CameraP);
 
-
+#pragma region RayTracing
 				v3 Sample = {};
 				v3 Attenuation = V3(1, 1, 1);
 
@@ -257,6 +257,7 @@ internal void RenderTile(world* World, image_u32 Image, u32 XMin, u32 YMin, u32 
 
 				FinalColor += Contrib * Sample;
 			}
+			#pragma endregion
 			//v3 Color = RayCast(&World, RayOrigin, RayDirection);
 
 			// TODO(casey): Real sRGB here
@@ -275,6 +276,7 @@ internal void RenderTile(world* World, image_u32 Image, u32 XMin, u32 YMin, u32 
 		}
 
 	}
+#pragma endregion
 	World->BouncesComputed += BouncesComputed;
 	++World->TileRetiredCount;
 }
@@ -394,7 +396,7 @@ int main(int argc, char** argv)
 	// Performance: 0.000267ms / bounce
 	// Performance: 0.000265ms/bounce
 
-
+#pragma region Image_split_into_Tile
 	clock_t StartClock = clock();
 	u32 CoreCount = 8;
 	u32 TileWidth = Image.Width / CoreCount;
@@ -433,6 +435,7 @@ int main(int argc, char** argv)
 
 	}
 	#endif 
+#pragma endregion
 	//RenderTile(&World, Image, 0, 0, Image.Width, Image.Height);
 
 	clock_t EndClock = clock();
