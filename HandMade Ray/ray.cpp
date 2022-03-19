@@ -1,3 +1,10 @@
+/* TODO(casey):
+*  this is only the very barest of bones for raytracer! We are computing
+* things inaccurately and physically incorrect _everywhere_. We'll 
+* fix it some day when we coma back to it :)
+
+*/
+
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <stdlib.h>
@@ -151,7 +158,12 @@ internal v3 RayCast(world* World, v3 RayOrigin, v3 RayDirection)
 
 			// TODO(casey) : COSINE!!!
 			Result += Hadamard(Attenuation, Mat.EmitColor);
-			Attenuation = Hadamard(Attenuation, Mat.RefColor);
+			f32 CosAtten = Inner(-RayDirection, NextNormal);
+			if (CosAtten < 0)
+			{
+				CosAtten = 0;
+			}
+			Attenuation = Hadamard(Attenuation, CosAtten * Mat.RefColor);
 
 			RayOrigin += HitDistance * RayDirection;
 
@@ -172,6 +184,26 @@ internal v3 RayCast(world* World, v3 RayOrigin, v3 RayDirection)
 
 
 	return Result;
+}
+
+internal f32 ExactLinearTosRGB(f32 L)
+{
+	if (L < 0.0f)
+	{
+		L = 0.0f;
+	}
+	else if (L > 1.0f)
+	{
+		L = 1.0f;
+	}
+
+	f32 S = L * 12.92f;
+	if (L > 0.0031308f)
+	{
+		S = 1.055f * Pow(L, 1.0f / 2.4f) - 0.055f;
+	}
+
+	return S;
 }
 
 internal void WriteImage(image_u32 Image, const char* OutputFileName)
@@ -210,29 +242,52 @@ internal void WriteImage(image_u32 Image, const char* OutputFileName)
 
 int main(int argc, char** argv)
 { 
-	material Materials[3] = {};
+	material Materials[7] = {};
 	Materials[0].EmitColor = V3(0.3f, 0.4f, 0.5f);
 	Materials[1].RefColor = V3(0.5f, 0.5f, 0.5f);
 	Materials[2].RefColor = V3(0.7f, 0.5f, 0.3f);
+	Materials[3].EmitColor = V3(4.0f, 0.0f, 0.0f);
+	Materials[4].RefColor = V3(0.4f, 0.8f, 0.2f);
+	Materials[4].Scatter = 0.7f;
+	Materials[5].RefColor = V3(0.4f, 0.8f, 0.9f);
+	Materials[5].Scatter = 0.85f;
+	Materials[6].RefColor = V3(0.95f, 0.95f, 0.95f);
+	Materials[6].Scatter = 1.0f;
 
 
-	plane Plane = {};
-	Plane.N = V3(0, 0, 1); // 这里假设Z轴向上
-	Plane.d = 0;
-	Plane.MatIndex = 1;
+	plane Planes[1]= {};
+	Planes[0].N = V3(0, 0, 1); // 这里假设Z轴向上
+	Planes[0].d = 0;
+	Planes[0].MatIndex = 1;
 
-	sphere Sphere = {};
-	Sphere.P = V3(0, 0, 0);
-	Sphere.r = 1.0f;
-	Sphere.MatIndex = 2;
+	sphere Spheres[5] = {};
+	Spheres[0].P = V3(0, 0, 0);
+	Spheres[0].r = 1.0f;
+	Spheres[0].MatIndex = 2;
+
+	Spheres[1].P = V3(3, -2, 0);
+	Spheres[1].r = 1.0f;
+	Spheres[1].MatIndex = 3;
+
+	Spheres[2].P = V3(-2, -1, 2);
+	Spheres[2].r = 1.0f;
+	Spheres[2].MatIndex = 4;
+
+	Spheres[3].P = V3(1, -1, 3);
+	Spheres[3].r = 1.0f;
+	Spheres[3].MatIndex = 5;
+
+	Spheres[4].P = V3(-2, 3, 0);
+	Spheres[4].r = 2.0f;
+	Spheres[4].MatIndex = 6;
 
 	world World = {};
-	World.MaterialCount = 3;
+	World.MaterialCount = _countof(Materials);
 	World.Materials = Materials;
-	World.PlaneCount = 1;
-	World.Planes = &Plane;
-	World.SphereCount = 1;
-	World.Spheres = &Sphere;
+	World.PlaneCount = _countof(Planes);
+	World.Planes = Planes;
+	World.SphereCount = _countof(Spheres);
+	World.Spheres = Spheres;
 
 	//                      (0, 0, 1)
 	//			  y'       /\
@@ -281,6 +336,9 @@ int main(int argc, char** argv)
 	f32 HalfFilmH = 0.5f * FilmH;
 	v3 FilmCenter = CameraP - FilmDist * CameraZ;
 
+	f32 HalfPixW = 0.5f / Image.Width;
+	f32 HalfPixH = 0.5f / Image.Height;
+
 	u32 RaysPerPixel = 16;
 	u32* Out = Image.Pixels;
 	for (u32 Y = 0; Y < Image.Height; ++Y)
@@ -290,20 +348,32 @@ int main(int argc, char** argv)
 		{
 			f32 FilmX = -1.0f + 2.0f * ((f32)X / (f32)Image.Width);
 
-			v3 FilmP = FilmCenter + FilmX * HalfFilmW * CameraX + FilmY * HalfFilmH * CameraY;
-			
-			v3 RayOrigin = CameraP;
-			v3 RayDirection = NOZ(FilmP - CameraP);
+
 			
 			v3 Color = {};
 			f32 Contrib = 1.0f / (f32)RaysPerPixel;
 			for (u32 RayIndex = 0; RayIndex < RaysPerPixel; RayIndex++)
 			{
+				f32 OffX = FilmX + RamdomBilateral() * HalfPixW;
+				f32 OffY = FilmY + RamdomBilateral() * HalfPixH;
+				v3 FilmP = FilmCenter + OffX * HalfFilmW * CameraX + OffY * HalfFilmH * CameraY;
+
+				v3 RayOrigin = CameraP;
+				v3 RayDirection = NOZ(FilmP - CameraP);
+
 				Color += Contrib * RayCast(&World, RayOrigin, RayDirection);
 			}
 			//v3 Color = RayCast(&World, RayOrigin, RayDirection);
 			
-			v4 BMPColor = V4(255.0f * Color, 255.0f);
+			// TODO(casey): Real sRGB here
+			v4 BMPColor = 
+			{
+				255.0f * ExactLinearTosRGB(Color.r),
+				255.0f * ExactLinearTosRGB(Color.g),
+				255.0f * ExactLinearTosRGB(Color.b),
+				255.0f,
+			};
+
 			u32 BMPValue = BGRAPack4x8(BMPColor);
 
 
