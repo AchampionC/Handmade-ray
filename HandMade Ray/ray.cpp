@@ -67,6 +67,20 @@ internal image_u32 AllocateImage(u32 Width, u32 Height)
 	return Image;
 }
 
+internal f32 RandomUnilateral()
+{
+	// TODO(casey) : _MUST_ replace this with better entropy later
+
+	f32 Result =  (f32)rand() / (f32)RAND_MAX;
+	return Result;
+}
+
+internal f32 RamdomBilateral()
+{
+	f32 Result =  -1.0f + 2.0f * RandomUnilateral();
+	return Result;
+}
+
 internal v3 RayCast(world* World, v3 RayOrigin, v3 RayDirection)
 {
 
@@ -95,7 +109,7 @@ internal v3 RayCast(world* World, v3 RayOrigin, v3 RayDirection)
 					HitDistance = t;
 					HitMatIndex = Plane.MatIndex;
 
-					NextOrigin = t * RayDirection;
+					//NextOrigin = RayOrigin + t * RayDirection;
 					NextNormal = Plane.N;
 				}
 			}
@@ -124,8 +138,8 @@ internal v3 RayCast(world* World, v3 RayOrigin, v3 RayDirection)
 				{
 					HitDistance = t;
 					HitMatIndex = Sphere.MatIndex;
-					NextOrigin = RayDirection * t;
-					NextNormal = NOZ(NextOrigin - Sphere.P);
+					//NextOrigin = RayOrigin + RayDirection * t;
+					NextNormal = NOZ(t * RayDirection + RayOrigin - Sphere.P);
 				}
 			
 			}
@@ -139,10 +153,13 @@ internal v3 RayCast(world* World, v3 RayOrigin, v3 RayDirection)
 			Result += Hadamard(Attenuation, Mat.EmitColor);
 			Attenuation = Hadamard(Attenuation, Mat.RefColor);
 
-			RayOrigin = NextOrigin;
+			RayOrigin += HitDistance * RayDirection;
 
-			// TODO(casey): Reflection!!!
-			RayDirection = NextNormal;
+			// TODO(casey): these are not accurate permutations!;
+			v3 PureBounce = RayDirection - 2.0f * Inner(RayDirection, NextNormal) * NextNormal;
+			v3 RamdomBounce = NOZ(NextNormal + V3(RamdomBilateral(), RamdomBilateral(), RamdomBilateral()));
+			RayDirection = NOZ(Lerp(RamdomBounce, Mat.Scatter, PureBounce));
+			//RayDirection = PureBounce;
 
 		}
 		else
@@ -264,6 +281,7 @@ int main(int argc, char** argv)
 	f32 HalfFilmH = 0.5f * FilmH;
 	v3 FilmCenter = CameraP - FilmDist * CameraZ;
 
+	u32 RaysPerPixel = 16;
 	u32* Out = Image.Pixels;
 	for (u32 Y = 0; Y < Image.Height; ++Y)
 	{
@@ -277,7 +295,13 @@ int main(int argc, char** argv)
 			v3 RayOrigin = CameraP;
 			v3 RayDirection = NOZ(FilmP - CameraP);
 			
-			v3 Color = RayCast(&World, RayOrigin, RayDirection);
+			v3 Color = {};
+			f32 Contrib = 1.0f / (f32)RaysPerPixel;
+			for (u32 RayIndex = 0; RayIndex < RaysPerPixel; RayIndex++)
+			{
+				Color += Contrib * RayCast(&World, RayOrigin, RayDirection);
+			}
+			//v3 Color = RayCast(&World, RayOrigin, RayDirection);
 			
 			v4 BMPColor = V4(255.0f * Color, 255.0f);
 			u32 BMPValue = BGRAPack4x8(BMPColor);

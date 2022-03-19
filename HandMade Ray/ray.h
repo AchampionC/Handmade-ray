@@ -19,6 +19,7 @@ typedef float f32;
 
 struct material
 {
+	f32 Scatter; // Note(casey) : 0 is pure diffuse("chalk") , 1 is pure specular("mirror);
 	v3 EmitColor;
 	v3 RefColor;
 
