@@ -43,7 +43,7 @@ struct sphere
 };
 
 struct world
-{
+{ 
 	u32 MaterialCount;
 	material* Materials;
 
@@ -71,7 +71,7 @@ struct work_queue
 	u32 WorkOrderCount;
 	work_order* WorkOrders;
 
-	volatile u32 NextWorkOrderIndex;
+	volatile u64 NextWorkOrderIndex;
 	volatile u64 BouncesComputed;
-	volatile u32 TileRetiredCount;
+	volatile u64 TileRetiredCount;
 };

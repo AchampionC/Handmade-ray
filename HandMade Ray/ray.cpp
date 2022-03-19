@@ -13,7 +13,7 @@
 #include <time.h>
 #include <assert.h>
 #include "ray.h"
-
+#include <windows.h>
 
 
 #define internal static
@@ -101,9 +101,33 @@ internal f32 ExactLinearTosRGB(f32 L)
 
 	return S;
 }
-
-internal void RenderTile(work_queue* Queue, world* World, image_u32 Image, u32 XMin, u32 YMin, u32 OnePastXMax, u32 OnePastYMax)
+internal u64 LockedAndReturnPreviousValue(u64 volatile* Value, u64 Addend)
 {
+	u64 Result = *Value;
+	*Value += Addend;
+	return Result;
+}
+
+
+
+internal b32x RenderTile(work_queue* Queue)
+{
+	u64 WorkOrderIndex = LockedAndReturnPreviousValue(&Queue->NextWorkOrderIndex, 1);
+	if (WorkOrderIndex >= Queue->WorkOrderCount)
+	{
+		return false;
+	}
+	// WorkOrders 表示整个队列的队头元素
+	// WorkOrderIndex表示当前位置距离队头多少偏移
+	// 从队列中取出元素
+	work_order* Order = Queue->WorkOrders + WorkOrderIndex;
+	world* World = Order->World;
+	image_u32 Image = Order->Image;
+	u32 XMin = Order->XMin;
+	u32 YMin = Order->YMin;
+	u32 OnePastXMax = Order->OnePastXMax;
+	u32 OnePastYMax = Order->OnePastYMax;
+
 
 	v3 CameraP = V3(0, -10, 1); // camera pos
 	v3 CameraZ = NOZ(CameraP - V3(0, 0, 0)); // camera ray  NOZ means normalize   z' (0, 1, 0)
@@ -273,8 +297,11 @@ internal void RenderTile(work_queue* Queue, world* World, image_u32 Image, u32 X
 
 	}
 #pragma endregion
-	Queue->BouncesComputed += BouncesComputed;
-	++Queue->TileRetiredCount;
+	LockedAndReturnPreviousValue(&Queue->BouncesComputed, BouncesComputed);
+	LockedAndReturnPreviousValue(&Queue->TileRetiredCount, 1);
+	return true;
+	//Queue->BouncesComputed += BouncesComputed;
+	//++Queue->TileRetiredCount;
 }
 
 internal void WriteImage(image_u32 Image, const char* OutputFileName)
@@ -309,6 +336,20 @@ internal void WriteImage(image_u32 Image, const char* OutputFileName)
 	{
 		fprintf(stderr, "[ERROR] Unable to write output file %s.\n", OutputFileName);
 	}
+}
+
+internal DWORD WINAPI WorkerThread(void* lpParameter)
+{
+	work_queue* Queue = (work_queue*)lpParameter;
+	while (RenderTile(Queue))
+	{}
+	return 0;
+}
+internal void CreateWorkThread(void* Parameter)
+{
+	DWORD ThreadID;
+	HANDLE ThreadHandle = CreateThread(0, 0, WorkerThread, Parameter, 0, &ThreadID);
+	CloseHandle(ThreadHandle); // 关闭该文件描述符
 }
 
 int main(int argc, char** argv)
@@ -390,18 +431,18 @@ int main(int argc, char** argv)
 
 	// Performance: 0.000269ms / bounce
 	// Performance: 0.000267ms / bounce
-	// Performance: 0.000265ms/bounce
+	// Performance: 0.000265ms / bounce
 
 #pragma region Image_split_into_Tile
 	clock_t StartClock = clock();
 	u32 CoreCount = 8;
 	u32 TileWidth = Image.Width / CoreCount;
 	u32 TileHeight = TileWidth;
-	printf("Configuration %d cores with %dx%d (%dk/tile) tiles\n", CoreCount, TileWidth, TileHeight, TileWidth * TileHeight * 4 / 1024);
-
 	u32 TileCountX = (Image.Width + TileWidth - 1) / TileWidth;
 	u32 TileCountY = (Image.Height + TileHeight - 1) / TileHeight;
 	u32 TotalTileCount = TileCountX * TileCountY;
+	printf("Configuration %d cores with %d %dx%d (%dk/tile) tiles\n", CoreCount, TotalTileCount, TileWidth, TileHeight, TileWidth * TileHeight * 4 / 1024);
+
 	u32 TileRetiredCount = 0;
 	#if 1
 	work_queue Queue = {};
@@ -440,15 +481,22 @@ int main(int argc, char** argv)
 	}
 
 	Assert(Queue.WorkOrderCount == TotalTileCount);
+	// memory fence
+	LockedAndReturnPreviousValue(&Queue.NextWorkOrderIndex, 0);
 
-
-	for (u32 WorkQueueIndex = 0; WorkQueueIndex < Queue.WorkOrderCount; WorkQueueIndex ++ )
+	for (u32 CoreIndex = 1; CoreIndex < CoreCount; CoreIndex++)
 	{
-		work_order* Order = Queue.WorkOrders + WorkQueueIndex;
-		RenderTile(&Queue, Order->World, Order->Image, Order->XMin, Order->YMin, Order->OnePastXMax, Order->OnePastYMax);
+		CreateWorkThread(&Queue);
+	}
 
-		printf("\rRaycasting row %d%% ...\n", 100 * Queue.TileRetiredCount / TotalTileCount);
-		fflush(stdout);
+	while (Queue.TileRetiredCount < TotalTileCount)
+	{ 
+
+		if (RenderTile(&Queue))
+		{ 
+			printf("\rRaycasting row %d%% ...\n", 100 * (u32)Queue.TileRetiredCount / TotalTileCount);
+			fflush(stdout);
+		}
 	}
 	#endif 
 #pragma endregion
