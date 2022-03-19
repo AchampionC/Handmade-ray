@@ -1,8 +1,15 @@
 #pragma once
 #include "raymath.h"
-
+#define Assert assert
 typedef float f32;
 
+
+struct image_u32
+{
+	u32 Width;
+	u32 Height;
+	u32* Pixels;
+};
 
 #define F32MAX FLT_MAX;
 #define F32MIN FLT_MIN; 
@@ -46,6 +53,25 @@ struct world
 	u32 SphereCount;
 	sphere* Spheres;
 
-	u64 BouncesComputed;
-	u32 TileRetiredCount;
+};
+
+// 记录每个Tile的信息
+struct work_order
+{
+	world* World;
+	image_u32 Image;
+	u32 XMin;
+	u32 YMin;
+	u32 OnePastXMax;
+	u32 OnePastYMax;
+};
+// 队列存储了上面的Order
+struct work_queue
+{
+	u32 WorkOrderCount;
+	work_order* WorkOrders;
+
+	volatile u32 NextWorkOrderIndex;
+	volatile u64 BouncesComputed;
+	volatile u32 TileRetiredCount;
 };

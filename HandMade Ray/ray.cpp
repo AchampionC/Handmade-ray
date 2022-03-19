@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <float.h>
 #include <time.h>
+#include <assert.h>
 #include "ray.h"
 
 
@@ -40,12 +41,7 @@ struct bitmap_header
 }; 
 #pragma pack(pop)
 
-struct image_u32
-{
-	u32 Width;
-	u32 Height;
-	u32* Pixels;
-};
+
 
 internal u32* GetPixelPointer(image_u32 Image, u32 X, u32 Y)
 {
@@ -106,7 +102,7 @@ internal f32 ExactLinearTosRGB(f32 L)
 	return S;
 }
 
-internal void RenderTile(world* World, image_u32 Image, u32 XMin, u32 YMin, u32 OnePastXMax, u32 OnePastYMax)
+internal void RenderTile(work_queue* Queue, world* World, image_u32 Image, u32 XMin, u32 YMin, u32 OnePastXMax, u32 OnePastYMax)
 {
 
 	v3 CameraP = V3(0, -10, 1); // camera pos
@@ -139,7 +135,7 @@ internal void RenderTile(world* World, image_u32 Image, u32 XMin, u32 YMin, u32 
 	u64 BouncesComputed = 0;
 
 	u32 RaysPerPixel = 16;
-
+	 
 #pragma region TileRender
 	for (u32 Y = YMin; Y < OnePastYMax; ++Y)
 	{
@@ -277,8 +273,8 @@ internal void RenderTile(world* World, image_u32 Image, u32 XMin, u32 YMin, u32 
 
 	}
 #pragma endregion
-	World->BouncesComputed += BouncesComputed;
-	++World->TileRetiredCount;
+	Queue->BouncesComputed += BouncesComputed;
+	++Queue->TileRetiredCount;
 }
 
 internal void WriteImage(image_u32 Image, const char* OutputFileName)
@@ -408,6 +404,9 @@ int main(int argc, char** argv)
 	u32 TotalTileCount = TileCountX * TileCountY;
 	u32 TileRetiredCount = 0;
 	#if 1
+	work_queue Queue = {};
+	Queue.WorkOrders = (work_order*)malloc(TotalTileCount * sizeof(work_order));
+
 	for (u32 TileY = 0; TileY < TileCountY; TileY++)
 	{
 		u32 MinY = TileY * TileHeight;
@@ -427,12 +426,29 @@ int main(int argc, char** argv)
 				OnePastMaxX = Image.Width;
 			}
 
-			RenderTile(&World, Image, MinX, MinY, OnePastMaxX, OnePastMaxY);
+			work_order* Order = Queue.WorkOrders + Queue.WorkOrderCount ++ ;
+			Assert(Queue.WorkOrderCount <= TotalTileCount);
 
-			printf("\rRaycasting row %d%% ...\n", 100 * World.TileRetiredCount / TotalTileCount);
-			fflush(stdout);
+			Order->World = &World;
+			Order->Image = Image;
+			Order->XMin	= MinX;
+			Order->YMin = MinY;
+			Order->OnePastXMax = OnePastMaxX;
+			Order->OnePastYMax = OnePastMaxY;
 		}
 
+	}
+
+	Assert(Queue.WorkOrderCount == TotalTileCount);
+
+
+	for (u32 WorkQueueIndex = 0; WorkQueueIndex < Queue.WorkOrderCount; WorkQueueIndex ++ )
+	{
+		work_order* Order = Queue.WorkOrders + WorkQueueIndex;
+		RenderTile(&Queue, Order->World, Order->Image, Order->XMin, Order->YMin, Order->OnePastXMax, Order->OnePastYMax);
+
+		printf("\rRaycasting row %d%% ...\n", 100 * Queue.TileRetiredCount / TotalTileCount);
+		fflush(stdout);
 	}
 	#endif 
 #pragma endregion
@@ -441,8 +457,8 @@ int main(int argc, char** argv)
 	clock_t EndClock = clock();
 	clock_t TimeElapsed = EndClock - StartClock;
 	printf("\nRaycasting time = %dms\n", TimeElapsed);
-	printf("\nTotal bounces: %llu\n", World.BouncesComputed);
-	printf("\nPerformance: %fms/bounce\n", (f64)TimeElapsed / (f64)World.BouncesComputed);
+	printf("\nTotal bounces: %llu\n", Queue.BouncesComputed);
+	printf("\nPerformance: %fms/bounce\n", (f64)TimeElapsed / (f64)Queue.BouncesComputed);
 	WriteImage(Image, "test.bmp");
 
 	printf("\nDone...\n");
