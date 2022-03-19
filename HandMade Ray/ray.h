@@ -1,13 +1,8 @@
 #pragma once
 #include "raymath.h"
-typedef char unsigned u8;
-typedef short unsigned u16;
-typedef int unsigned u32;
 
-typedef char s8;
-typedef short s16;
-typedef int s32;
 typedef float f32;
+
 
 #define F32MAX FLT_MAX;
 #define F32MIN FLT_MIN; 
@@ -15,7 +10,7 @@ typedef float f32;
 #define Tau32 6.28318530717958647692f
 
 #define internal static
-
+#define global static 
 
 struct material
 {
@@ -50,4 +45,7 @@ struct world
 
 	u32 SphereCount;
 	sphere* Spheres;
+
+	u64 BouncesComputed;
+	u32 TileRetiredCount;
 };
