@@ -41,7 +41,13 @@ struct bitmap_header
 }; 
 #pragma pack(pop)
 
-
+internal u32 GetCpuCoreCount()
+{
+	SYSTEM_INFO Info;
+	GetSystemInfo(&Info);
+	u32 Result = Info.dwNumberOfProcessors;
+	return Result;
+}
 
 internal u32* GetPixelPointer(image_u32 Image, u32 X, u32 Y)
 {
@@ -158,8 +164,9 @@ internal b32x RenderTile(work_queue* Queue)
 	f32 HalfPixH = 0.5f / Image.Height;
 	u64 BouncesComputed = 0;
 
-	u32 RaysPerPixel = 16;
-	 
+	u32 RaysPerPixel = Queue->RaysPerPixel;
+	u32 MaxBounceCount = Queue->MaxBounceCount;
+
 #pragma region TileRender
 	for (u32 Y = YMin; Y < OnePastYMax; ++Y)
 	{
@@ -188,7 +195,9 @@ internal b32x RenderTile(work_queue* Queue)
 				f32 MinHitDistance = 0.001f;
 
 				f32 Tolerance = 0.0001f;
-				for (u32 BounceCount = 0; BounceCount < 8; BounceCount++)
+
+				// TODO(casey): Monte-carlo termination?
+				for (u32 BounceCount = 0; BounceCount < MaxBounceCount; BounceCount++)
 				{
 					f32 HitDistance = F32MAX;
 					u32 HitMatIndex = 0;
@@ -434,19 +443,23 @@ int main(int argc, char** argv)
 	// Performance: 0.000265ms / bounce
 
 #pragma region Image_split_into_Tile
-	clock_t StartClock = clock();
-	u32 CoreCount = 8;
+	u32 CoreCount = GetCpuCoreCount();
 	u32 TileWidth = Image.Width / CoreCount;
 	u32 TileHeight = TileWidth;
+	TileHeight = TileWidth = 64;
 	u32 TileCountX = (Image.Width + TileWidth - 1) / TileWidth;
 	u32 TileCountY = (Image.Height + TileHeight - 1) / TileHeight;
 	u32 TotalTileCount = TileCountX * TileCountY;
-	printf("Configuration %d cores with %d %dx%d (%dk/tile) tiles\n", CoreCount, TotalTileCount, TileWidth, TileHeight, TileWidth * TileHeight * 4 / 1024);
 
 	u32 TileRetiredCount = 0;
 	#if 1
 	work_queue Queue = {};
 	Queue.WorkOrders = (work_order*)malloc(TotalTileCount * sizeof(work_order));
+	Queue.MaxBounceCount = 8;
+	Queue.RaysPerPixel = 1024;
+
+	printf("Configuration %d cores with %d %dx%d (%dk/tile) tiles\n", CoreCount, TotalTileCount, TileWidth, TileHeight, TileWidth * TileHeight * 4 / 1024);
+	printf("Quality: %d rays/pixel, %d max bounces per ray\n", Queue.RaysPerPixel, Queue.MaxBounceCount);
 
 	for (u32 TileY = 0; TileY < TileCountY; TileY++)
 	{
@@ -484,6 +497,7 @@ int main(int argc, char** argv)
 	// memory fence
 	LockedAndReturnPreviousValue(&Queue.NextWorkOrderIndex, 0);
 
+	clock_t StartClock = clock();
 	for (u32 CoreIndex = 1; CoreIndex < CoreCount; CoreIndex++)
 	{
 		CreateWorkThread(&Queue);

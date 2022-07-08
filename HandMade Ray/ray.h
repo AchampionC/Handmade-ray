@@ -68,6 +68,8 @@ struct work_order
 // 队列存储了上面的Order
 struct work_queue
 {
+	u32 MaxBounceCount;
+	u32 RaysPerPixel;
 	u32 WorkOrderCount;
 	work_order* WorkOrders;
 
